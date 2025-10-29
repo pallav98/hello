@@ -1,95 +1,90 @@
 ---
-- name: Install SQuirreL SQL Client locally (system-wide)
+- name: Install SQuirreL SQL Client for all users (silent mode)
   hosts: localhost
   become: yes
-  connection: local
-
-  vars:
-    squirrel_install_dir: /opt/squirrel-sql
-    squirrel_download_url: "https://downloads.sourceforge.net/project/squirrel-sql/1-stable/latest/squirrel-sql-install.jar"
-    squirrel_installer_path: "/tmp/squirrel-sql-installer.jar"
-    squirrel_local_copy: "./squirrel-sql-install.jar"
-
   tasks:
-    - name: Ensure Java runtime is installed
-      ansible.builtin.package:
-        name: openjdk-17-jre
+    - name: Update apt packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install required dependencies
+      apt:
+        name:
+          - curl
+          - desktop-file-utils
+          - rsync
+          - openjdk-17-jre
         state: present
 
-    - name: Create installation directory
-      ansible.builtin.file:
-        path: "{{ squirrel_install_dir }}"
+    - name: Create temp and opt directories
+      file:
+        path: "{{ item }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
+      loop:
+        - /tmp
+        - /opt/squirrel-sql-5.0.0
 
-    - name: Try downloading SQuirreL SQL installer (3 retries)
-      ansible.builtin.get_url:
-        url: "{{ squirrel_download_url }}"
-        dest: "{{ squirrel_installer_path }}"
-        mode: '0644'
+    - name: Download SQuirreL SQL installer JAR
+      get_url:
+        url: "https://sourceforge.net/projects/squirrel-sql/files/5.0.0/squirrel-sql-5.0.0-standard.jar/download"
+        dest: "/tmp/squirrel-sql-5.0.0-standard.jar"
+        mode: "0644"
       register: download_result
       retries: 3
-      delay: 5
+      delay: 10
       until: download_result is succeeded
       ignore_errors: yes
 
-    - name: Fallback - use local copy if download failed
-      ansible.builtin.copy:
-        src: "{{ squirrel_local_copy }}"
-        dest: "{{ squirrel_installer_path }}"
-        mode: '0644'
+    - name: Copy local JAR if download failed
+      copy:
+        src: ./squirrel-sql-5.0.0-standard.jar
+        dest: /tmp/squirrel-sql-5.0.0-standard.jar
       when: download_result is failed
-      ignore_errors: no
 
-    - name: Check installer presence
-      ansible.builtin.stat:
-        path: "{{ squirrel_installer_path }}"
-      register: installer_file
-
-    - name: Fail if installer missing
-      ansible.builtin.fail:
-        msg: >
-          SQuirreL SQL installer not found. Either download failed or local copy not found.
-          Please manually download it from:
-          https://sourceforge.net/projects/squirrel-sql/files/latest/download
-          and place it next to this playbook as 'squirrel-sql-install.jar'.
-      when: not installer_file.stat.exists
+    - name: Copy auto-install.xml to /tmp
+      copy:
+        src: ./auto-install.xml
+        dest: /tmp/auto-install.xml
+        mode: "0644"
 
     - name: Run SQuirreL SQL installer in silent mode
-      ansible.builtin.command: >
-        java -jar {{ squirrel_installer_path }}
-        -q
-        -dir "{{ squirrel_install_dir }}"
+      command: >
+        java -jar /tmp/squirrel-sql-5.0.0-standard.jar
+        -options /tmp/auto-install.xml
       args:
-        creates: "{{ squirrel_install_dir }}/squirrel-sql.sh"
+        chdir: /opt
+      environment:
+        JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
 
-    - name: Make main script executable
-      ansible.builtin.file:
-        path: "{{ squirrel_install_dir }}/squirrel-sql.sh"
-        mode: '0755'
+    - name: Make installation directory executable
+      file:
+        path: /usr/local/squirrel-sql-5.0.0
+        mode: "0755"
+        recurse: yes
 
-    - name: Create global symlink for all users
-      ansible.builtin.file:
-        src: "{{ squirrel_install_dir }}/squirrel-sql.sh"
-        dest: /usr/local/bin/squirrel-sql
+    - name: Create symlink for global access
+      file:
+        src: /usr/local/squirrel-sql-5.0.0/squirrel-sql.sh
+        dest: /usr/local/bin/squirrelsql
         state: link
-        mode: '0755'
+        force: yes
 
     - name: Create desktop entry for all users
-      ansible.builtin.copy:
-        dest: /usr/share/applications/squirrel-sql.desktop
+      copy:
+        dest: /usr/share/applications/squirrelsql.desktop
         content: |
           [Desktop Entry]
           Name=SQuirreL SQL Client
-          Comment=Universal SQL Client for JDBC databases
-          Exec={{ squirrel_install_dir }}/squirrel-sql.sh
-          Icon={{ squirrel_install_dir }}/icons/acorn.png
-          Terminal=false
+          Exec=/usr/local/bin/squirrelsql
+          Icon=/usr/local/squirrel-sql-5.0.0/icons/acorn.png
           Type=Application
           Categories=Development;Database;
-        mode: '0644'
+          Terminal=false
 
-    - name: Cleanup installer
-      ansible.builtin.file:
-        path: "{{ squirrel_installer_path }}"
-        state: absent
+    - name: Update desktop database
+      command: update-desktop-database /usr/share/applications/
+
+    - name: Validate desktop file
+      command: desktop-file-validate /usr/share/applications/squirrelsql.desktop
