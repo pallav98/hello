@@ -77,4 +77,19 @@
 
     - name: Create desktop entry for all users
       ansible.builtin.copy:
-        dest: /usr/share/applications/
+        dest: /usr/share/applications/squirrel-sql.desktop
+        content: |
+          [Desktop Entry]
+          Name=SQuirreL SQL Client
+          Comment=Universal SQL Client for JDBC databases
+          Exec={{ squirrel_install_dir }}/squirrel-sql.sh
+          Icon={{ squirrel_install_dir }}/icons/acorn.png
+          Terminal=false
+          Type=Application
+          Categories=Development;Database;
+        mode: '0644'
+
+    - name: Cleanup installer
+      ansible.builtin.file:
+        path: "{{ squirrel_installer_path }}"
+        state: absent
