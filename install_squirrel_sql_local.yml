@@ -1,0 +1,67 @@
+---
+- name: Install SQuirreL SQL Client locally (system-wide)
+  hosts: localhost
+  become: yes
+  connection: local
+
+  vars:
+    squirrel_install_dir: /opt/squirrel-sql
+    squirrel_download_url: "https://sourceforge.net/projects/squirrel-sql/files/latest/download"
+    squirrel_installer_path: "/tmp/squirrel-sql-installer.jar"
+
+  tasks:
+    - name: Ensure Java runtime is installed
+      ansible.builtin.package:
+        name: openjdk-17-jre
+        state: present
+
+    - name: Create installation directory
+      ansible.builtin.file:
+        path: "{{ squirrel_install_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download latest SQuirreL SQL installer
+      ansible.builtin.get_url:
+        url: "{{ squirrel_download_url }}"
+        dest: "{{ squirrel_installer_path }}"
+        mode: '0644'
+
+    - name: Run SQuirreL SQL installer in silent mode
+      ansible.builtin.command: >
+        java -jar {{ squirrel_installer_path }}
+        -q
+        -dir "{{ squirrel_install_dir }}"
+      args:
+        creates: "{{ squirrel_install_dir }}/squirrel-sql.sh"
+
+    - name: Make main script executable
+      ansible.builtin.file:
+        path: "{{ squirrel_install_dir }}/squirrel-sql.sh"
+        mode: '0755'
+
+    - name: Create global symlink
+      ansible.builtin.file:
+        src: "{{ squirrel_install_dir }}/squirrel-sql.sh"
+        dest: /usr/local/bin/squirrel-sql
+        state: link
+        mode: '0755'
+
+    - name: Create desktop entry for all users
+      ansible.builtin.copy:
+        dest: /usr/share/applications/squirrel-sql.desktop
+        content: |
+          [Desktop Entry]
+          Name=SQuirreL SQL Client
+          Comment=Universal SQL Client for JDBC databases
+          Exec={{ squirrel_install_dir }}/squirrel-sql.sh
+          Icon={{ squirrel_install_dir }}/icons/acorn.png
+          Terminal=false
+          Type=Application
+          Categories=Development;Database;
+        mode: '0644'
+
+    - name: Cleanup installer
+      ansible.builtin.file:
+        path: "{{ squirrel_installer_path }}"
+        state: absent
