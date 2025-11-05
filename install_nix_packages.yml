@@ -1,0 +1,62 @@
+---
+- name: Install packages using Nix
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Ensure Nix package manager is installed
+      ansible.builtin.shell: |
+        if ! command -v nix >/dev/null 2>&1; then
+          curl -L https://nixos.org/nix/install | sh
+        fi
+      args:
+        creates: /nix
+
+    - name: Enable Nix profile for all users
+      ansible.builtin.shell: |
+        mkdir -p /etc/profile.d
+        echo '. /etc/profile.d/nix.sh' > /etc/profile.d/nix.sh
+        echo 'if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh; fi' >> /etc/profile.d/nix.sh
+      args:
+        creates: /etc/profile.d/nix.sh
+
+    - name: Ensure multi-user Nix daemon service is running
+      ansible.builtin.systemd:
+        name: nix-daemon
+        state: started
+        enabled: true
+
+    - name: Install required packages system-wide via Nix
+      ansible.builtin.shell: |
+        nix-env -iA nixpkgs.{{ item }}
+      loop:
+        - awscli2
+        - vscode
+        - datagrip
+        - drawio
+        - duplicity
+        - go
+        - intellij-idea-community
+        - intellij-idea-ultimate
+        - mysql-workbench
+        - postman
+        - sqlitebrowser
+        - eclipse
+        - sublime4
+        - yq
+        - k9s
+        - kubectl
+        - helm
+        - terraform
+        - kubectx
+      environment:
+        NIX_PATH: nixpkgs=https://nixos.org/channels/nixpkgs-unstable
+      args:
+        executable: /bin/bash
+
+    - name: Verify Nix packages installed
+      ansible.builtin.command: nix-env -q
+      register: nix_packages
+
+    - debug:
+        msg: "Installed Nix packages: {{ nix_packages.stdout_lines }}"
